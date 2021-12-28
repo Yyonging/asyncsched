@@ -1,15 +1,8 @@
-import asyncio
-import sys
-sys.path.append('.')
-from asyncsched import AsyncPrioritySchedule, AsyncSchedule, PrefSchedule
-
+import time
 import pytest
 import asyncio
-import time
 
-# import logging
-# log = logging.getLogger(__name__).debug
-# print = log
+from asyncsched import AsyncPrioritySchedule, AsyncSchedule, PrefSchedule
 
 @pytest.fixture()
 def asyncSchedule():
@@ -28,7 +21,7 @@ param_schdule = pytest.mark.parametrize('schedule',
                        pytest.lazy_fixture('asyncPrioritySchedule')])
 
 
-allow_time_delta = 0.03
+allow_time_delta = 0.05
 
 @pytest.fixture()
 def loop():
@@ -50,7 +43,7 @@ def test_enter(schedule, loop):
         assert len(schedule._queue) == 1
         loop.run_until_complete(task)
         spend_time = time.time() - start_time
-        assert delay-allow_time_delta < spend_time < delay + allow_time_delta  # assert 0.01 > time.time() - start_time raise error why?
+        assert delay-allow_time_delta < spend_time < delay + allow_time_delta
         assert len(schedule._queue) == 0
         assert rv[0] == 'test'
     else: 

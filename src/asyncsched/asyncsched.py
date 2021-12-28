@@ -9,7 +9,7 @@ from itertools import count
 from time import time as _time
 from typing import Coroutine
 
-__all__ = ["AsyncPrioritySchedule", "AsyncSchedule"]
+__all__ = ["AsyncPrioritySchedule", "AsyncSchedule", "PrefSchedule"]
 
 Event = namedtuple('Event', 'time, priority, sequence, action, argument, kwargs')
 Event.time.__doc__ = ('''Numeric type compatible with the return value of the
