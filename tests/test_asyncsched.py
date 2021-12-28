@@ -2,7 +2,7 @@ import time
 import pytest
 import asyncio
 
-from asyncsched import AsyncPrioritySchedule, AsyncSchedule, PrefSchedule
+from asyncscheduler import AsyncPrioritySchedule, AsyncSchedule, PrefSchedule
 
 @pytest.fixture()
 def asyncSchedule():

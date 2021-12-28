@@ -1,4 +1,4 @@
-The asyncsched module defines some class which implements a general purpose event scheduler.
+The asyncscheduler module defines some class which implements a general purpose event scheduler.
 some useful async schedule class that refer to the standard library `sched`.
 AsyncPrioritySchedule use the same namedtuple and the same interface to the `sched`.
 if u do not need the priority attribute. AsyncSchedule, PrefSchdule is perfer to use.
