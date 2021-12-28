@@ -1,4 +1,4 @@
 __pycache__/*
 *.pyc
 /dist/*
-/src/asyncscheduler.egg-info/*
+/src/sled.egg-info/*
