@@ -1,7 +1,7 @@
 import asyncio
 import sys
 sys.path.append('.')
-from asyncsched import AsyncPrioritySchedule, AsyncSchedule
+from asyncsched import AsyncPrioritySchedule, AsyncSchedule, PrefSchedule
 
 import pytest
 import asyncio
@@ -19,9 +19,16 @@ def asyncSchedule():
 def asyncPrioritySchedule():
     return AsyncPrioritySchedule()
 
+@pytest.fixture()
+def perfSchedule():
+    return PrefSchedule()
+
 param_schdule = pytest.mark.parametrize('schedule',
                       [pytest.lazy_fixture('asyncSchedule'),
                        pytest.lazy_fixture('asyncPrioritySchedule')])
+
+
+allow_time_delta = 0.03
 
 @pytest.fixture()
 def loop():
@@ -43,7 +50,7 @@ def test_enter(schedule, loop):
         assert len(schedule._queue) == 1
         loop.run_until_complete(task)
         spend_time = time.time() - start_time
-        assert delay-0.001 < spend_time < delay + 0.02  # assert 0.01 > time.time() - start_time raise error why?
+        assert delay-allow_time_delta < spend_time < delay + allow_time_delta  # assert 0.01 > time.time() - start_time raise error why?
         assert len(schedule._queue) == 0
         assert rv[0] == 'test'
     else: 
@@ -51,7 +58,7 @@ def test_enter(schedule, loop):
         assert len(schedule._queue) == 1
         call_at = handler.when()
         now = loop.time()
-        assert  now-0.001 < call_at < now+delay+0.02
+        assert  now-allow_time_delta < call_at < now+delay+allow_time_delta
         loop.run_until_complete(asyncio.sleep(delay+1))
         assert len(schedule._queue) == 0
         assert rv[0] == 'test'
@@ -69,7 +76,7 @@ def test_enterabs(schedule, loop):
         schedule.enterabs(time.time()+delay, func, ('test',))
     assert len(schedule._queue) == 1
     assert schedule._queue[0].action == func
-    loop.run_until_complete(asyncio.sleep(delay+1))
+    loop.run_until_complete(asyncio.sleep(delay+allow_time_delta))
     assert len(schedule._queue) == 0
     assert rv[0] == 'test'
 
@@ -81,10 +88,67 @@ def test_ticker(asyncSchedule, loop):
     async def func(s):
         rv.append(s)
     asyncSchedule.ticker(interval, times, func, argument=('test',))
-    loop.run_until_complete(asyncio.sleep(1))
+    loop.run_until_complete(asyncio.sleep(interval+allow_time_delta))
     assert len(rv) == 1
-    loop.run_until_complete(asyncio.sleep(1))
+    loop.run_until_complete(asyncio.sleep(interval))
     assert len(rv) == 2
-    loop.run_until_complete(asyncio.sleep(1))
+    loop.run_until_complete(asyncio.sleep(interval))
     assert len(rv) == 3
     assert 'test' == rv[0]
+
+@pytest.mark.perf
+def test_perf_enter(perfSchedule, loop):
+    rv = []
+    func = lambda s: rv.append(s)
+    delay = 1
+    perfSchedule.enter(delay, func, ('test',))
+    loop.run_until_complete(asyncio.sleep(delay+allow_time_delta))
+    assert len(rv) == 1
+    assert 'test' == rv[0]
+
+@pytest.mark.perf
+def test_perf_enter_coroutine(perfSchedule, loop):
+    rv = []
+    async def func(s):
+        rv.append(s)
+    delay = 1
+    perfSchedule.enter(delay, func, ('test',))
+    loop.run_until_complete(asyncio.sleep(delay+allow_time_delta))
+    assert len(rv) == 1
+    assert 'test' == rv[0]
+
+@pytest.mark.perf
+def test_perf_ticker(perfSchedule, loop):
+    rv = []
+    def func(s):
+        rv.append(s)
+    interval = 0.5
+    times = 3
+    perfSchedule.ticker(interval, times, func, argument=('test',))
+    loop.run_until_complete(asyncio.sleep(interval+allow_time_delta))
+    assert len(rv) == 1
+    loop.run_until_complete(asyncio.sleep(interval))
+    assert len(rv) == 2
+    loop.run_until_complete(asyncio.sleep(interval))
+    assert len(rv) == 3
+    assert 'test' == rv[-1]
+    loop.run_until_complete(asyncio.sleep(interval*3))
+    assert len(rv) == 3
+
+@pytest.mark.perf
+def test_perf_ticker_async(perfSchedule, loop):
+    rv = []
+    async def func(s):
+        rv.append(s)
+    interval = 0.5
+    times = 3
+    perfSchedule.ticker(interval, times, func, argument=('test',))
+    loop.run_until_complete(asyncio.sleep(interval+allow_time_delta))
+    assert len(rv) == 1
+    loop.run_until_complete(asyncio.sleep(interval))
+    assert len(rv) == 2
+    loop.run_until_complete(asyncio.sleep(interval))
+    assert len(rv) == 3
+    assert 'test' == rv[0]
+    loop.run_until_complete(asyncio.sleep(interval*3))
+    assert len(rv) == 3

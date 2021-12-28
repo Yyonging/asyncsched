@@ -7,7 +7,7 @@ import heapq
 from collections import namedtuple
 from itertools import count
 from time import time as _time
-from typing import Callable, Coroutine, Union
+from typing import Coroutine
 
 __all__ = ["AsyncPrioritySchedule", "AsyncSchedule"]
 
@@ -44,7 +44,7 @@ class AsyncSchedule:
             kwargs = {}
         event = Event(time, None, next(self._sequence_generator),
                             action, argument, kwargs)
-        at_time = time-self.timefunc()+self.loop.time()
+        at_time = time - self.timefunc() + self.loop.time()
         heapq.heappush(self._queue, event)
         action = AsyncSchedule.toc(action, *argument, **kwargs)
         def wrapper_action():
@@ -92,20 +92,22 @@ class AsyncSchedule:
         events = self._queue[:]
         return list(map(heapq.heappop, [events]*len(events)))
 
-    def ticker(self, interval, times, func=None, argument=(), kwargs=_sentinel, run_forver=False):
+    def ticker(self, interval, times, func, argument=(), kwargs=_sentinel, run_forver=False):
         if kwargs is _sentinel:
             kwargs = {}
-        i = 0
+        i = 2
+        times = i + times
+        start_time = self.timefunc()
         async def wrapper_action(func, *args, **kwargs):
             nonlocal i
             if not run_forver and i < times:
-                self.enter(interval, action=wrapper_action(func, *args, **kwargs))
+                self.enterabs(start_time+(i*interval), action=wrapper_action(func, *args, **kwargs))
                 await AsyncSchedule.toc(func, *args, **kwargs)
                 i += 1
-            else:
-                self.enter(interval, action=wrapper_action(func, *args, **kwargs))
+            elif run_forver:
+                self.enterabs(start_time+(i*interval), action=wrapper_action(func, *args, **kwargs))
                 await AsyncSchedule.ftoc(func, *args, **kwargs)
-        return self.enter(interval, action=wrapper_action(func, *argument, **kwargs))
+        return self.enterabs(start_time+interval, action=wrapper_action(func, *argument, **kwargs))
 
     def timer(self, time, action, argument=(), kwargs=_sentinel):
         return self.enterabs(time, action, argument=argument, kwargs=kwargs)
@@ -206,3 +208,42 @@ class PrefSchedule:
         if not loop:
             loop = asyncio.get_event_loop()
         self.loop = loop
+        self.__is_stop = False
+
+    def ticker(self, interval, times, func, argument=(), kwargs=_sentinel, run_forver=False):
+        if kwargs is _sentinel:
+            kwargs = {}
+        i = 2
+        times = i + times
+        loop = self.loop
+        start_time = self.timefunc()
+        async def wrapper_action(func, *args, **kwargs):
+            nonlocal i
+            if not run_forver and i < times:
+                self.enterabs(start_time+(i*interval), action=wrapper_action(func, *args, **kwargs))
+                loop.create_task(AsyncSchedule.toc(func, *args, **kwargs))
+                i += 1
+            elif run_forver:
+                self.enterabs(start_time+(i*interval), action=wrapper_action(func, *args, **kwargs))
+                loop.create_task(AsyncSchedule.toc(func, *args, **kwargs))
+        return self.enterabs(start_time+interval, action=wrapper_action(func, *argument, **kwargs))
+
+    def timer(self, time, action, argument=(), kwargs=_sentinel):
+        return self.enterabs(time, action, argument=argument, kwargs=kwargs)
+
+    def enterabs(self, time, action, argument=(), kwargs=_sentinel):
+        if kwargs is _sentinel:
+            kwargs = {}
+        at_time = time - self.timefunc() + self.loop.time()
+        if self.__is_stop:
+            return 
+        wrapper_action = lambda : self.loop.create_task(AsyncSchedule.toc(action, *argument, **kwargs))
+        return self.loop.call_at(at_time, wrapper_action)
+
+    def enter(self, delay, action, argument=(), kwargs=_sentinel):
+        time = self.timefunc() + delay
+        return self.enterabs(time, action, argument, kwargs)
+
+    def cancel(self):
+        self.__is_stop = True
+        return self.__is_stop
