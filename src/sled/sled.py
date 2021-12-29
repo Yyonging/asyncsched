@@ -142,7 +142,7 @@ class AsyncPrioritySchedule:
             kwargs = {}
         event = Event(time, priority, next(self._sequence_generator), action, argument, kwargs)
         heapq.heappush(self._queue, event)
-        async def inner(time, action):
+        async def inner():
             q = self._queue
             delayfunc = self.delayfunc
             timefunc = self.timefunc
@@ -150,7 +150,7 @@ class AsyncPrioritySchedule:
             while True:
                 if not q:
                     break 
-                time, _, _, action, *_ = q[0]
+                time, _, _, action, argument, kwargs = q[0]
                 now = timefunc()
                 if time > now:
                     delay = True
@@ -162,7 +162,7 @@ class AsyncPrioritySchedule:
                 else:
                     action = AsyncSchedule.toc(action, *argument, **kwargs)
                     await action
-        return self.loop.create_task(inner(time, action))
+        return self.loop.create_task(inner())
 
     def enter(self, delay, priority=0, action=None, argument=(), kwargs=_sentinel):
         """A variant that specifies the time as a relative time.

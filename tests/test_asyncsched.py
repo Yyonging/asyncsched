@@ -56,6 +56,48 @@ def test_enter(schedule, loop):
         assert len(schedule._queue) == 0
         assert rv[0] == 'test'
 
+@pytest.mark.pri
+def test_priority_enterabs_func_async(asyncPrioritySchedule, loop):
+    rv = []
+    func = lambda s: rv.append(s)
+    async def afunc(s):
+        rv.append(s)
+    priority = 1
+    delay = 3
+    start_time = time.time()
+    asyncPrioritySchedule.enterabs(start_time+delay, priority, func, ('test',))
+    assert asyncPrioritySchedule.empty() is False
+    asyncPrioritySchedule.enter(start_time+delay, priority+1, afunc('test async'))
+    loop.run_until_complete(asyncio.sleep(delay+allow_time_delta))
+    assert rv[-1] == 'test'
+
+@param_schdule
+def test_enterabs_corountine(schedule, loop):
+    rv = []
+    async def func(s):
+        rv.append(s)
+    priority = 1
+    delay = 3
+    start_time = time.time()
+    if isinstance(schedule, AsyncPrioritySchedule):
+        task = schedule.enterabs(start_time+delay, priority, func('test'))
+        assert len(schedule._queue) == 1
+        loop.run_until_complete(task)
+        spend_time = time.time() - start_time
+        assert delay-allow_time_delta < spend_time < delay + allow_time_delta
+        assert len(schedule._queue) == 0
+        assert rv[0] == 'test'
+    else: 
+        handler = schedule.enterabs(start_time+delay, func('test'))
+        assert len(schedule._queue) == 1
+        call_at = handler.when()
+        now = loop.time()
+        assert  now-allow_time_delta < call_at < now+delay+allow_time_delta
+        loop.run_until_complete(asyncio.sleep(delay+1))
+        assert len(schedule._queue) == 0
+        assert rv[0] == 'test'
+
+
 @param_schdule
 def test_enterabs(schedule, loop):
     rv = []
@@ -100,7 +142,7 @@ def test_perf_enter(perfSchedule, loop):
     assert 'test' == rv[0]
 
 @pytest.mark.perf
-def test_perf_enter_coroutine(perfSchedule, loop):
+def test_perf_enter_async(perfSchedule, loop):
     rv = []
     async def func(s):
         rv.append(s)
