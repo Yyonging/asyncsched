@@ -9,7 +9,7 @@ from itertools import count
 from time import time as _time
 from typing import Coroutine
 
-__all__ = ["AsyncPrioritySchedule", "AsyncSchedule", "PrefSchedule"]
+__all__ = ["AsyncPriorityScheduler", "AsyncScheduler", "PerfScheduler"]
 
 Event = namedtuple('Event', 'time, priority, sequence, action, argument, kwargs')
 Event.time.__doc__ = ('''Numeric type compatible with the return value of the
@@ -28,7 +28,7 @@ arguments for the action.''')
 _sentinel = object()
 
 
-class AsyncSchedule:
+class AsyncScheduler:
 
     def __init__(self, loop=None):
         self._queue = []
@@ -46,7 +46,7 @@ class AsyncSchedule:
                             action, argument, kwargs)
         at_time = time - self.timefunc() + self.loop.time()
         heapq.heappush(self._queue, event)
-        action = AsyncSchedule.toc(action, *argument, **kwargs)
+        action = AsyncScheduler.toc(action, *argument, **kwargs)
         def wrapper_action():
             try:
                 self._queue.remove(event)
@@ -102,11 +102,11 @@ class AsyncSchedule:
             nonlocal i
             if not run_forver and i < times:
                 self.enterabs(start_time+(i*interval), action=wrapper_action(func, *args, **kwargs))
-                await AsyncSchedule.toc(func, *args, **kwargs)
+                await AsyncScheduler.toc(func, *args, **kwargs)
                 i += 1
             elif run_forver:
                 self.enterabs(start_time+(i*interval), action=wrapper_action(func, *args, **kwargs))
-                await AsyncSchedule.ftoc(func, *args, **kwargs)
+                await AsyncScheduler.ftoc(func, *args, **kwargs)
         return self.enterabs(start_time+interval, action=wrapper_action(func, *argument, **kwargs))
 
     def timer(self, time, action, argument=(), kwargs=_sentinel):
@@ -121,10 +121,10 @@ class AsyncSchedule:
         if asyncio.iscoroutinefunction(action):
             action = action(*args, **kwargs)
         elif not asyncio.iscoroutine(action):
-            action = AsyncSchedule.ftoc(action, *args, **kwargs)
+            action = AsyncScheduler.ftoc(action, *args, **kwargs)
         return action
 
-class AsyncPrioritySchedule:
+class AsyncPriorityScheduler:
 
     def __init__(self, timefunc=_time, delayfunc=asyncio.sleep, loop=None):
         """Initialize a new instance, passing the time and delay
@@ -160,7 +160,7 @@ class AsyncPrioritySchedule:
                 if delay:
                     await delayfunc(time - now)
                 else:
-                    action = AsyncSchedule.toc(action, *argument, **kwargs)
+                    action = AsyncScheduler.toc(action, *argument, **kwargs)
                     await action
         return self.loop.create_task(inner())
 
@@ -201,7 +201,7 @@ class AsyncPrioritySchedule:
         events = self._queue[:]
         return list(map(heapq.heappop, [events]*len(events)))
 
-class PrefSchedule:
+class PerfScheduler:
     def __init__(self, loop=None):
         self.timefunc = _time
         self.delayfunc = asyncio.sleep
@@ -221,11 +221,11 @@ class PrefSchedule:
             nonlocal i
             if not run_forver and i < times:
                 self.enterabs(start_time+(i*interval), action=wrapper_action(func, *args, **kwargs))
-                loop.create_task(AsyncSchedule.toc(func, *args, **kwargs))
+                loop.create_task(AsyncScheduler.toc(func, *args, **kwargs))
                 i += 1
             elif run_forver:
                 self.enterabs(start_time+(i*interval), action=wrapper_action(func, *args, **kwargs))
-                loop.create_task(AsyncSchedule.toc(func, *args, **kwargs))
+                loop.create_task(AsyncScheduler.toc(func, *args, **kwargs))
         return self.enterabs(start_time+interval, action=wrapper_action(func, *argument, **kwargs))
 
     def timer(self, time, action, argument=(), kwargs=_sentinel):
@@ -237,7 +237,7 @@ class PrefSchedule:
         at_time = time - self.timefunc() + self.loop.time()
         if self.__is_stop:
             return 
-        wrapper_action = lambda : self.loop.create_task(AsyncSchedule.toc(action, *argument, **kwargs))
+        wrapper_action = lambda : self.loop.create_task(AsyncScheduler.toc(action, *argument, **kwargs))
         return self.loop.call_at(at_time, wrapper_action)
 
     def enter(self, delay, action, argument=(), kwargs=_sentinel):

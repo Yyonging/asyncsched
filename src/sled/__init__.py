@@ -1,1 +1,1 @@
-from .sled import AsyncPrioritySchedule, AsyncSchedule, PrefSchedule
+from .sled import AsyncPriorityScheduler, AsyncScheduler, PerfScheduler

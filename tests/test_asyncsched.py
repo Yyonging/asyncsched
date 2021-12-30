@@ -2,23 +2,23 @@ import time
 import pytest
 import asyncio
 
-from sled import AsyncPrioritySchedule, AsyncSchedule, PrefSchedule
+from sled import AsyncPriorityScheduler, AsyncScheduler, PerfScheduler
 
 @pytest.fixture()
-def asyncSchedule():
-    return AsyncSchedule()
+def asyncScheduler():
+    return AsyncScheduler()
 
 @pytest.fixture()
-def asyncPrioritySchedule():
-    return AsyncPrioritySchedule()
+def asyncPriorityScheduler():
+    return AsyncPriorityScheduler()
 
 @pytest.fixture()
 def perfSchedule():
-    return PrefSchedule()
+    return PerfScheduler()
 
 param_schdule = pytest.mark.parametrize('schedule',
-                      [pytest.lazy_fixture('asyncSchedule'),
-                       pytest.lazy_fixture('asyncPrioritySchedule')])
+                      [pytest.lazy_fixture('asyncScheduler'),
+                       pytest.lazy_fixture('asyncPriorityScheduler')])
 
 
 allow_time_delta = 0.05
@@ -37,7 +37,7 @@ def test_enter(schedule, loop):
     func = lambda s: rv.append(s)
     priority = 1
     delay = 3
-    if isinstance(schedule, AsyncPrioritySchedule):
+    if isinstance(schedule, AsyncPriorityScheduler):
         start_time = time.time()
         task = schedule.enter(delay, priority, func, ('test',))
         assert len(schedule._queue) == 1
@@ -57,7 +57,7 @@ def test_enter(schedule, loop):
         assert rv[0] == 'test'
 
 @pytest.mark.pri
-def test_priority_enterabs_func_async(asyncPrioritySchedule, loop):
+def test_priority_enterabs_func_async(asyncPriorityScheduler, loop):
     rv = []
     func = lambda s: rv.append(s)
     async def afunc(s):
@@ -65,9 +65,9 @@ def test_priority_enterabs_func_async(asyncPrioritySchedule, loop):
     priority = 1
     delay = 3
     start_time = time.time()
-    asyncPrioritySchedule.enterabs(start_time+delay, priority, func, ('test',))
-    assert asyncPrioritySchedule.empty() is False
-    asyncPrioritySchedule.enter(start_time+delay, priority+1, afunc('test async'))
+    asyncPriorityScheduler.enterabs(start_time+delay, priority, func, ('test',))
+    assert asyncPriorityScheduler.empty() is False
+    asyncPriorityScheduler.enter(start_time+delay, priority+1, afunc('test async'))
     loop.run_until_complete(asyncio.sleep(delay+allow_time_delta))
     assert rv[-1] == 'test'
 
@@ -79,7 +79,7 @@ def test_enterabs_corountine(schedule, loop):
     priority = 1
     delay = 3
     start_time = time.time()
-    if isinstance(schedule, AsyncPrioritySchedule):
+    if isinstance(schedule, AsyncPriorityScheduler):
         task = schedule.enterabs(start_time+delay, priority, func('test'))
         assert len(schedule._queue) == 1
         loop.run_until_complete(task)
@@ -104,7 +104,7 @@ def test_enterabs(schedule, loop):
     func = lambda s: rv.append(s)
     priority = 1
     delay = 3
-    if isinstance(schedule, AsyncPrioritySchedule):
+    if isinstance(schedule, AsyncPriorityScheduler):
         schedule.enterabs(time.time()+delay, priority, func, ('test',))
         assert schedule._queue[0].priority == priority
     else:
@@ -116,13 +116,13 @@ def test_enterabs(schedule, loop):
     assert rv[0] == 'test'
 
 @pytest.mark.ticker
-def test_ticker(asyncSchedule, loop):
+def test_ticker(asyncScheduler, loop):
     rv = []
     interval = 1
     times = 3
     async def func(s):
         rv.append(s)
-    asyncSchedule.ticker(interval, times, func, argument=('test',))
+    asyncScheduler.ticker(interval, times, func, argument=('test',))
     loop.run_until_complete(asyncio.sleep(interval+allow_time_delta))
     assert len(rv) == 1
     loop.run_until_complete(asyncio.sleep(interval))
