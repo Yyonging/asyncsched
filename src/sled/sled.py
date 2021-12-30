@@ -3,11 +3,12 @@ AsyncPrioritySchedule use the same namedtuple and interface to the sched.
 if u do not need the priority, AsyncSchedule is perfer to use.
 """
 import asyncio
+from asyncio.events import TimerHandle
 import heapq
 from collections import namedtuple
 from itertools import count
 from time import time as _time
-from typing import Coroutine
+from typing import Callable, Coroutine, Union, List
 
 __all__ = ["AsyncPriorityScheduler", "AsyncScheduler", "PerfScheduler"]
 
@@ -38,8 +39,10 @@ class AsyncScheduler:
         if not loop:
             loop = asyncio.get_event_loop()
         self.loop = loop
+        self.__is_stop = False
 
-    def enterabs(self, time, action, argument=(), kwargs=_sentinel):
+    def enterabs(self, time: Union[int, float], action: Union[Callable, Coroutine],
+                    argument: tuple=(), kwargs: dict=_sentinel) -> Event:
         if kwargs is _sentinel:
             kwargs = {}
         event = Event(time, None, next(self._sequence_generator),
@@ -49,13 +52,16 @@ class AsyncScheduler:
         action = AsyncScheduler.toc(action, *argument, **kwargs)
         def wrapper_action():
             try:
-                self._queue.remove(event)
-                self.loop.create_task(action)
+                if not self.__is_stop:
+                    self._queue.remove(event)
+                    self.loop.create_task(action)
             except ValueError:
                 ...
-        return self.loop.call_at(at_time, wrapper_action)
+        self.loop.call_at(at_time, wrapper_action)
+        return event
 
-    def enter(self, delay, action, argument=(), kwargs=_sentinel):
+    def enter(self, delay: Union[int, float], action: Union[Callable, Coroutine],
+                    argument: tuple=(), kwargs: dict=_sentinel) -> Event:
         """A variant that specifies the time as a relative time.
 
         This is actually the more commonly used interface.
@@ -64,7 +70,7 @@ class AsyncScheduler:
         time = self.timefunc() + delay
         return self.enterabs(time, action, argument, kwargs)
 
-    def cancel(self, event):
+    def cancel(self, event: Event):
         """Remove an event from the queue.
 
         This must be presented the ID as returned by enter().
@@ -73,6 +79,11 @@ class AsyncScheduler:
         """
         self._queue.remove(event)
         heapq.heapify(self._queue)
+
+    def clear(self):
+        ''' Remove all the event from the queue
+        '''
+        self._queue.clear()
 
     def empty(self):
         """Check whether the queue is empty."""
@@ -92,36 +103,44 @@ class AsyncScheduler:
         events = self._queue[:]
         return list(map(heapq.heappop, [events]*len(events)))
 
-    def ticker(self, interval, times, func, argument=(), kwargs=_sentinel, run_forver=False):
+    def ticker(self, interval: Union[int, float], times: int, func: Callable,
+                    argument: tuple=(), kwargs: dict=_sentinel, run_forever: bool=False):
         if kwargs is _sentinel:
             kwargs = {}
         i = 2
-        times = i + times
+        if not run_forever:
+            times = i + times
         start_time = self.timefunc()
         async def wrapper_action(func, *args, **kwargs):
-            nonlocal i
-            if not run_forver and i < times:
+            nonlocal i, start_time
+            if not run_forever and i < times:
                 self.enterabs(start_time+(i*interval), action=wrapper_action(func, *args, **kwargs))
                 await AsyncScheduler.toc(func, *args, **kwargs)
                 i += 1
-            elif run_forver:
+            elif run_forever:
                 self.enterabs(start_time+(i*interval), action=wrapper_action(func, *args, **kwargs))
-                await AsyncScheduler.ftoc(func, *args, **kwargs)
+                await AsyncScheduler.toc(func, *args, **kwargs)
+                if i > 4294967294: # reset
+                    start_time += i * interval
+                    i = 0
+                i += 1
         return self.enterabs(start_time+interval, action=wrapper_action(func, *argument, **kwargs))
 
-    def timer(self, time, action, argument=(), kwargs=_sentinel):
+    def timer(self, time: Union[int, float], action: Union[Callable, Coroutine], argument: tuple=(), kwargs:dict =_sentinel):
         return self.enterabs(time, action, argument=argument, kwargs=kwargs)
 
-    @staticmethod
-    def ftoc(func, *args, **kwargs) -> Coroutine:
-        return asyncio.to_thread(func, *args, **kwargs)
+    def stop(self) -> bool:
+        ''' stop the ticker
+        '''
+        self.__is_stop = True
+        return self.__is_stop
 
     @staticmethod
-    def toc(action, *args, **kwargs) -> Coroutine:
+    def toc(action: Callable, *args, **kwargs) -> Coroutine:
         if asyncio.iscoroutinefunction(action):
             action = action(*args, **kwargs)
         elif not asyncio.iscoroutine(action):
-            action = AsyncScheduler.ftoc(action, *args, **kwargs)
+            action = asyncio.to_thread(action, *args, **kwargs)
         return action
 
 class AsyncPriorityScheduler:
@@ -137,7 +156,9 @@ class AsyncPriorityScheduler:
             loop = asyncio.get_event_loop()
         self.loop = loop
 
-    def enterabs(self, time, priority=None, action=None, argument=(), kwargs=_sentinel):
+    def enterabs(self, time: Union[int, float], priority: int=0,
+                action: Union[Callable, Coroutine]=None, argument: tuple=(),
+                    kwargs: dict=_sentinel) -> Event:
         if kwargs is _sentinel:
             kwargs = {}
         event = Event(time, priority, next(self._sequence_generator), action, argument, kwargs)
@@ -162,9 +183,11 @@ class AsyncPriorityScheduler:
                 else:
                     action = AsyncScheduler.toc(action, *argument, **kwargs)
                     await action
-        return self.loop.create_task(inner())
+        self.loop.create_task(inner())
+        return event
 
-    def enter(self, delay, priority=0, action=None, argument=(), kwargs=_sentinel):
+    def enter(self, delay: Union[int, float], priority: int=0, action: Union[Callable, Coroutine]=None,
+                argument: tuple=(), kwargs: dict=_sentinel) -> Event:
         """A variant that specifies the time as a relative time.
 
         This is actually the more commonly used interface.
@@ -173,7 +196,7 @@ class AsyncPriorityScheduler:
         time = self.timefunc() + delay
         return self.enterabs(time, priority, action, argument, kwargs)
 
-    def cancel(self, event):
+    def cancel(self, event: Event):
         """Remove an event from the queue.
 
         This must be presented the ID as returned by enter().
@@ -183,12 +206,12 @@ class AsyncPriorityScheduler:
         self._queue.remove(event)
         heapq.heapify(self._queue)
 
-    def empty(self):
+    def empty(self) -> bool:
         """Check whether the queue is empty."""
         return not self._queue
 
     @property
-    def queue(self):
+    def queue(self) -> List[Event]:
         """An ordered list of upcoming events.
  
         Events are named tuples with fields for:
@@ -210,7 +233,9 @@ class PerfScheduler:
         self.loop = loop
         self.__is_stop = False
 
-    def ticker(self, interval, times, func, argument=(), kwargs=_sentinel, run_forver=False):
+    def ticker(self, interval: Union[int, float], times: Union[int, float],
+                func: Union[Callable, Coroutine], argument: tuple=(), kwargs: dict=_sentinel,
+                    run_forever: bool=False):
         if kwargs is _sentinel:
             kwargs = {}
         i = 2
@@ -218,20 +243,26 @@ class PerfScheduler:
         loop = self.loop
         start_time = self.timefunc()
         async def wrapper_action(func, *args, **kwargs):
-            nonlocal i
-            if not run_forver and i < times:
+            nonlocal i, start_time
+            if not run_forever and i < times and not self.__is_stop:
                 self.enterabs(start_time+(i*interval), action=wrapper_action(func, *args, **kwargs))
                 loop.create_task(AsyncScheduler.toc(func, *args, **kwargs))
                 i += 1
-            elif run_forver:
+            elif run_forever and not self.__is_stop:
                 self.enterabs(start_time+(i*interval), action=wrapper_action(func, *args, **kwargs))
                 loop.create_task(AsyncScheduler.toc(func, *args, **kwargs))
+                if i > 4294967294: # reset
+                    start_time += i * interval
+                    i = 0
+                i += 1
         return self.enterabs(start_time+interval, action=wrapper_action(func, *argument, **kwargs))
 
-    def timer(self, time, action, argument=(), kwargs=_sentinel):
+    def timer(self, time: Union[int, float], action: Callable,
+                argument: tuple=(), kwargs: dict=_sentinel) -> TimerHandle:
         return self.enterabs(time, action, argument=argument, kwargs=kwargs)
 
-    def enterabs(self, time, action, argument=(), kwargs=_sentinel):
+    def enterabs(self, time: Union[int, float], action: Union[Callable, Coroutine],
+                    argument: tuple=(), kwargs: dict=_sentinel) -> TimerHandle:
         if kwargs is _sentinel:
             kwargs = {}
         at_time = time - self.timefunc() + self.loop.time()
@@ -240,10 +271,29 @@ class PerfScheduler:
         wrapper_action = lambda : self.loop.create_task(AsyncScheduler.toc(action, *argument, **kwargs))
         return self.loop.call_at(at_time, wrapper_action)
 
-    def enter(self, delay, action, argument=(), kwargs=_sentinel):
+    def enter(self, delay: Union[int, float], action: Union[Callable, Coroutine],
+                argument: tuple=(), kwargs: dict=_sentinel):
         time = self.timefunc() + delay
         return self.enterabs(time, action, argument, kwargs)
 
-    def cancel(self):
+    def stop(self) -> bool:
+        ''' stop the ticker
+        '''
         self.__is_stop = True
         return self.__is_stop
+
+if __name__ == '__main__':
+
+    asyncScheduler = AsyncScheduler()
+
+    rv = []
+    def test():
+        print('s')
+        rv.append('s')
+
+    event = asyncScheduler.enter(3, test)
+
+    print(event)
+    loop = asyncio.get_event_loop()
+    loop.run_forever()
+

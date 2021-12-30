@@ -20,6 +20,10 @@ param_schdule = pytest.mark.parametrize('schedule',
                       [pytest.lazy_fixture('asyncScheduler'),
                        pytest.lazy_fixture('asyncPriorityScheduler')])
 
+async_perf_schdule = pytest.mark.parametrize('scheduler',
+                      [pytest.lazy_fixture('asyncScheduler'),
+                       pytest.lazy_fixture('perfSchedule')])
+
 
 allow_time_delta = 0.05
 
@@ -36,23 +40,20 @@ def test_enter(schedule, loop):
     rv = []
     func = lambda s: rv.append(s)
     priority = 1
-    delay = 3
+    delay = 1
     if isinstance(schedule, AsyncPriorityScheduler):
-        start_time = time.time()
-        task = schedule.enter(delay, priority, func, ('test',))
+        schedule.enter(delay, priority, func, ('test',))
         assert len(schedule._queue) == 1
-        loop.run_until_complete(task)
-        spend_time = time.time() - start_time
-        assert delay-allow_time_delta < spend_time < delay + allow_time_delta
+        loop.run_until_complete(asyncio.sleep(delay+allow_time_delta))
         assert len(schedule._queue) == 0
         assert rv[0] == 'test'
     else: 
-        handler = schedule.enter(delay, func, ('test',))
+        event = schedule.enter(delay, func, ('test',))
         assert len(schedule._queue) == 1
-        call_at = handler.when()
-        now = loop.time()
+        call_at = event.time
+        now = time.time()
         assert  now-allow_time_delta < call_at < now+delay+allow_time_delta
-        loop.run_until_complete(asyncio.sleep(delay+1))
+        loop.run_until_complete(asyncio.sleep(delay+allow_time_delta))
         assert len(schedule._queue) == 0
         assert rv[0] == 'test'
 
@@ -77,23 +78,21 @@ def test_enterabs_corountine(schedule, loop):
     async def func(s):
         rv.append(s)
     priority = 1
-    delay = 3
+    delay = 1
     start_time = time.time()
     if isinstance(schedule, AsyncPriorityScheduler):
-        task = schedule.enterabs(start_time+delay, priority, func('test'))
+        schedule.enterabs(start_time+delay, priority, func('test'))
         assert len(schedule._queue) == 1
-        loop.run_until_complete(task)
-        spend_time = time.time() - start_time
-        assert delay-allow_time_delta < spend_time < delay + allow_time_delta
+        loop.run_until_complete(asyncio.sleep(delay+allow_time_delta))
         assert len(schedule._queue) == 0
         assert rv[0] == 'test'
     else: 
-        handler = schedule.enterabs(start_time+delay, func('test'))
+        event = schedule.enterabs(start_time+delay, func('test'))
         assert len(schedule._queue) == 1
-        call_at = handler.when()
-        now = loop.time()
+        call_at = event.time
+        now = time.time()
         assert  now-allow_time_delta < call_at < now+delay+allow_time_delta
-        loop.run_until_complete(asyncio.sleep(delay+1))
+        loop.run_until_complete(asyncio.sleep(delay+allow_time_delta))
         assert len(schedule._queue) == 0
         assert rv[0] == 'test'
 
@@ -103,7 +102,7 @@ def test_enterabs(schedule, loop):
     rv = []
     func = lambda s: rv.append(s)
     priority = 1
-    delay = 3
+    delay = 1
     if isinstance(schedule, AsyncPriorityScheduler):
         schedule.enterabs(time.time()+delay, priority, func, ('test',))
         assert schedule._queue[0].priority == priority
@@ -130,6 +129,22 @@ def test_ticker(asyncScheduler, loop):
     loop.run_until_complete(asyncio.sleep(interval))
     assert len(rv) == 3
     assert 'test' == rv[0]
+
+@pytest.mark.ticker
+@async_perf_schdule
+def test_ticker_forever(scheduler, loop):
+    rv = []
+    interval = 1
+    async def func(s):
+        rv.append(s)
+    scheduler.ticker(interval, 0, func, argument=('test',), run_forever=True)
+    loop.run_until_complete(asyncio.sleep(interval+allow_time_delta))
+    assert len(rv) == 1
+    scheduler.stop()
+    loop.run_until_complete(asyncio.sleep(interval))
+    assert len(rv) == 1
+    loop.run_until_complete(asyncio.sleep(interval))
+    assert len(rv) == 1
 
 @pytest.mark.perf
 def test_perf_enter(perfSchedule, loop):
